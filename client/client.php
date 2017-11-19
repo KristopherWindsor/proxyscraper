@@ -74,7 +74,7 @@ if ($instructions->action == 'getPages') {
     }
 } elseif ($instructions->action == 'getRSS') {
     $loopUntil = new \DateTime($instructions->loopUntil);
-    $offset = 0;
+    $offset = $instructions->initialOffset ?? 0;
 
     do {
         $url = $instructions->url . $offset;

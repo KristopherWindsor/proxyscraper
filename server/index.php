@@ -218,7 +218,7 @@ function provideInstructions($requestBody, $requestHeaders, $datastore, $clientI
     $hibernateDuration = 600;
     if (!shouldClientSleep($clientId, count($queue), $datastore->data['rssSources'])) {
         // Priority 1 -- keep the page queue full to avoid the nothing-to-do/hibernate case
-        if (count($queue) < 8000 && $rssInstructions = provideInstructionsForRss($datastore))
+        if (count($queue) < 8000 && $rssInstructions = provideInstructionsForRss($datastore, count($queue)))
             return $rssInstructions;
 
         // Priority 2 -- process queue
@@ -300,7 +300,7 @@ function shouldClientSleep($clientId, $pageQueueSize, $rssSources) {
     return true;
 }
 
-function provideInstructionsForRss($datastore) {
+function provideInstructionsForRss($datastore, $availableQueueSize) {
     foreach ($datastore->data['rssSources'] as $rssSource => $data) {
         if (!getRssSourcePriorityQueueScore($data))
             break;
@@ -312,6 +312,9 @@ function provideInstructionsForRss($datastore) {
             'url'       => $rssSource,
             'loopUntil' => $data['newestItem'] ?: (new \DateTime('7 days ago'))->format(\DateTime::ATOM),
             'maxCount'  => 2000,
+            // Skip the first results under high load, because they have a higher
+            // chance of being edited soon anyway
+            'initialOffset' => 25 * intval($availableQueueSize / 1000),
         ]);
     }
     return null;
