@@ -182,8 +182,7 @@ function getPageQueueWithoutPendingPages($datastore) {
     return array_filter($datastore->data['pageQueue'], function ($item) {
         if (!$item)
             return true;
-        $date = new \DateTime($item);
-        return $date < new \DateTime('2 minutes ago');
+        return new \DateTime($item) < new \DateTime();
     });
 }
 
@@ -224,10 +223,10 @@ function provideInstructions($requestBody, $requestHeaders, $datastore, $clientI
 
         // Priority 2 -- process queue
         if ($queue) {
-            $urls = [];
-            $howManyToGive = 30 + count($queue) / 50;
+            $howManyToGive = (int) (30 + count($queue) / 50);
+            $urls          = [];
             foreach ($queue as $pageUrl => $_) {
-                $datastore->data['pageQueue'][$pageUrl] = date(DateTime::ATOM);
+                $datastore->data['pageQueue'][$pageUrl] = date(DateTime::ATOM, time() + $howManyToGive * 3);
                 $urls[] = $pageUrl;
                 if (count($urls) >= $howManyToGive)
                     break;
@@ -237,6 +236,8 @@ function provideInstructions($requestBody, $requestHeaders, $datastore, $clientI
                 'action'                => 'getPages',
                 'sleepDurationMicrosec' => 500 * 1000,
                 'urls'                  => $urls,
+                // The pages will be reserved at this time, so the client should stop
+                'timeLimit'             => $howManyToGive * 3,
             ]);
         }
 

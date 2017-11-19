@@ -46,6 +46,7 @@ if (!$instructions) {
 }
 
 if ($instructions->action == 'getPages') {
+    $startTime = time();
     foreach ($instructions->urls as $url) {
         $content = file_get_contents($url);
         if (!$content)
@@ -65,6 +66,8 @@ if ($instructions->action == 'getPages') {
         curl_close($ch);
         verboseLog(['url' => $endpoint . 'newPage', 'response' => $output]);
         if (!$output)
+            break;
+        if (time() - $startTime + 1 >= $instructions->timeLimit)
             break;
 
         usleep($instructions->sleepDurationMicrosec);
