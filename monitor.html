@@ -1,0 +1,228 @@
+
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+
+        <style>
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        }
+
+        .graph .axis {
+            stroke-width: 1;
+        }
+
+        .graph .axis .tick line {
+            stroke: black;
+        }
+
+        .graph .axis .tick text {
+            fill: black;
+            font-size: 0.7em;
+        }
+
+        .graph .axis .domain {
+            fill: none;
+            stroke: black;
+        }
+
+        .graph .group {
+            fill: none;
+            stroke: black;
+            stroke-width: 1.5;
+        }
+        </style>
+        <script
+            src="https://code.jquery.com/jquery-3.2.1.min.js"
+            integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4="
+            crossorigin="anonymous"></script>
+    </head>
+    <body>
+        <h1>Craigslist scraper real-time stats</h1>
+
+        <div id="graph1" class="graph"></div>
+
+        <p id="summary"></p>
+
+        <p id="clientList"><p>
+
+        <script src="http://d3js.org/d3.v3.min.js"></script>
+        <script>
+
+        var limit = 60 * 30, // how many ticks/frames to show
+            duration = 2000; // tick every X ms
+
+        var graphData = null;
+
+        function graph1() {
+            var now = new Date(Date.now() - duration)
+
+            var width = 800,
+                height = 600
+
+            var groups = {
+                pageQueueSize: {
+                    value: 0,
+                    color: 'blue',
+                    data: d3.range(limit).map(function() {
+                        return 0
+                    })
+                },
+                pageQueueSizeWithoutPending: {
+                    value: 0,
+                    color: 'lightblue',
+                    data: d3.range(limit).map(function() {
+                        return 0
+                    })
+                },
+                rssBurst1: {
+                    value: 0,
+                    color: 'red',
+                    data: d3.range(limit).map(function() {
+                        return 0
+                    })
+                },
+                rssBurst2: {
+                    value: 0,
+                    color: 'orange',
+                    data: d3.range(limit).map(function() {
+                        return 0
+                    })
+                }
+            }
+
+            var x = d3.time.scale()
+                .domain([now - (limit - 2), now - duration])
+                .range([0, width])
+
+            var y = d3.scale.linear()
+                .domain([0, 60])
+                .range([height, 0])
+
+            var line = d3.svg.line()
+                .interpolate('basis')
+                .x(function(d, i) {
+                    return x(now - (limit - 1 - i) * duration)
+                })
+                .y(function(d) {
+                    return y(d)
+                })
+
+            var svg = d3.select('#graph1').append('svg')
+                .attr('class', 'chart')
+                .attr('width', width)
+                .attr('height', height + 50)
+
+            var axis = svg.append('g')
+                .attr('class', 'x axis')
+                .attr('transform', 'translate(0,' + height + ')')
+                .call(x.axis = d3.svg.axis().scale(x).orient('bottom'))
+
+            var paths = svg.append('g')
+
+            for (var name in groups) {
+                var group = groups[name]
+                group.path = paths.append('path')
+                    .data([group.data])
+                    .attr('class', name + ' group')
+                    .style('stroke', group.color)
+            }
+
+            var tick = function () {
+                now = new Date()
+
+                // Add new values
+                for (var name in groups) {
+                    var group = groups[name]
+                    //group.data.push(group.value) // Real values arrive at irregular intervals
+                    //group.data.push(20 + Math.random() * 100)
+                    if (!graphData)
+                        group.data.push(0);
+                    else
+                        group.data.push(graphData[name]);
+
+                    group.path.attr('d', line)
+                }
+
+                // Shift domain
+                x.domain([now - (limit - 2) * duration, now - duration])
+
+                // Slide x-axis left
+                axis.transition()
+                    .duration(duration)
+                    .ease('linear')
+                    .call(x.axis)
+
+                // Slide paths left
+                paths.attr('transform', null)
+                    .transition()
+                    .duration(duration)
+                    .ease('linear')
+                    .attr('transform', 'translate(' + x(now - (limit - 1) * duration) + ')')
+                    .each('end', tick)
+
+                // Remove oldest data point from each group
+                for (var name in groups) {
+                    var group = groups[name]
+                    group.data.shift()
+                }
+            }
+
+            tick();
+        }
+
+        function getActualData() {
+            $.get( "http://73.241.1.76/proxyscraper/?do=stats", function( data ) {
+                graphData = {
+                    pageQueueSize: Math.sqrt(data.pageQueueSize),
+                    pageQueueSizeWithoutPending: Math.sqrt(data.pageQueueSizeWithoutPending),
+                    rssBurst1: 0,
+                    rssBurst2: 0
+                }
+                if (data.rssBursts[0] && data.rssBursts[0][2] * 1000 > Date.now() - 60000)
+                    graphData.rssBurst1 = Math.sqrt(data.rssBursts[0][1]);
+                if (data.rssBursts[1] && data.rssBursts[1][2] * 1000 > Date.now() - 60000)
+                    graphData.rssBurst2 = Math.sqrt(data.rssBursts[1][1]);
+
+                console.log(graphData);
+                $("#summary").text("Page queue: " + data.pageQueueSize + " total / " + data.pageQueueSizeWithoutPending + " available");
+
+                var text = "";
+                for (var i in data.clients) {
+                    text += i + " -- ";
+                    // hibernating right now
+                    if (data.clients[i].hibernate * 1000 > Date.now())
+                        text += "hibernating for " + formatTimeDuration(data.clients[i].hibernate * 1000 - Date.now());
+                    // recently active
+                    else if (data.clients[i].lastActive * 1000 > Date.now() - 120000)
+                        text += "active for " + formatTimeDuration(Date.now() - data.clients[i].initTime * 1000);
+                    // hibernation ended recently, but client hasn't come back yet
+                    else if (data.clients[i].hibernate * 1000 > Date.now() - 120000)
+                        text += "hibernation expiring";
+                    else
+                        text += "inactive";
+                    if (data.clients[i].pagesProvided)
+                        text += " (" + data.clients[i].pagesProvided + " pages scraped)";
+                    text += '<br>';
+                }
+                $("#clientList").html(text);
+            })
+        }
+
+        function formatTimeDuration(ms) {
+            var sec = ms / 1000;
+            if (sec < 60)
+                return Math.floor(sec) + " sec.";
+            if (sec < 3600)
+                return Math.floor(sec / 60) + " min.";
+            if (sec < 3600 * 72)
+                return Math.floor(sec / 3600) + " hr.";
+            return Math.floor(sec / (3600 * 24)) + " days";
+        }
+
+        graph1();
+        setInterval(getActualData, duration);
+        </script>
+    </body>
+</html>
