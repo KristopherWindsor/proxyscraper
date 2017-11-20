@@ -17,14 +17,21 @@ if ($hibernateUntil && $hibernateUntil > time())
     die();
 
 // determine client ID
-$idFile = __DIR__ . '/client_id';
-if (!file_exists($idFile))
-    file_put_contents($idFile, uniqid(exec('hostname')));
-$clientId = trim(file_get_contents($idFile));
+if ($argc >= 2) {
+    $clientId = $argv[1];
+} else {
+    $idFile = __DIR__ . '/client_id';
+    if (!file_exists($idFile)) {
+        file_put_contents($idFile, uniqid(exec('hostname')));
+    }
+    $clientId = trim(file_get_contents($idFile));
+}
 
 // determine endpoint to get/post to
 $endpointFilename = __DIR__ . '/api.dat';
-if (!file_exists($endpointFilename) || filemtime($endpointFilename) < time() - 3600 * 4) {
+if ($argc >= 3) {
+    $endpoint = $argv[2];
+} elseif (!file_exists($endpointFilename) || filemtime($endpointFilename) < time() - 3600 * 4) {
     $endpoint = trim(file_get_contents('http://windsorportal.com/acerbox.txt'));
     if (!$endpoint)
         die();
@@ -74,7 +81,7 @@ if ($instructions->action == 'getPages') {
     }
 } elseif ($instructions->action == 'getRSS') {
     $loopUntil = new \DateTime($instructions->loopUntil);
-    $offset = $instructions->initialOffset ?? 0;
+    $offset = isset($instructions->initialOffset) ? $instructions->initialOffset : 0;
 
     do {
         $url = $instructions->url . $offset;
