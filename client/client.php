@@ -55,15 +55,25 @@ if (!$instructions) {
 if ($instructions->action == 'getPages') {
     $startTime = time();
     foreach ($instructions->urls as $url) {
-        $content = file_get_contents($url);
-        if (!$content)
+        // Scrape page
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $content = curl_exec($ch);
+        $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        // Need to send results for 404's otherwise, we keep retrying them
+        $ok = (($httpcode == 200 && $content) || $httpcode == 404);
+        if (!$ok)
             break;
 
+        // Send to server
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $endpoint . 'newPage');
         curl_setopt($ch, CURLOPT_HTTPHEADER, array(
             'Content-Type: text/html',
             'X-SOURCE-URL: ' . $url,
+            'X-SOURCE-HTTP-CODE: ' . $httpcode,
             'X-CLIENT-ID: ' . $clientId,
             'X-CLIENT-VERSION: ' . $CLIENT_VERSION,
         ));

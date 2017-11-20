@@ -327,21 +327,26 @@ function acceptPage($requestBody, $requestHeaders, $datastore, $clientId) {
         return '';
     }
 
-    $filename = __DIR__ . '/pages/' . urlencode($sourceUrl);
-    $alreadyExists = file_exists($filename);
+    $sourceHttpCode = $requestHeaders['X-SOURCE-HTTP-CODE'] ?? 200;
+
+    if ($sourceHttpCode == 200) {
+        $filename = __DIR__ . '/pages/' . urlencode($sourceUrl);
+        $alreadyExists = file_exists($filename);
+
+        // Stats
+        @$datastore->data['stats'][$alreadyExists ? 'pageEdits' : 'pageAdds']++;
+
+        // Save page
+        file_put_contents($filename, $requestBody);
+    }
 
     // Track client activity
     @$datastore->data['clients'][$clientId]['pagesProvided']++;
-
-    // Stats
-    @$datastore->data['stats'][$alreadyExists ? 'pageEdits' : 'pageAdds']++;
 
     // Take page out of pending queue
     unset($datastore->data['pageQueue'][$sourceUrl]);
     $datastore->save();
 
-    // Save page
-    file_put_contents($filename, $requestBody);
     http_response_code(201);
     return 'created';
 }
