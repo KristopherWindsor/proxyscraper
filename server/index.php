@@ -335,6 +335,10 @@ function acceptPage($requestBody, $requestHeaders, $datastore, $clientId) {
 
         // Stats
         @$datastore->data['stats'][$alreadyExists ? 'pageEdits' : 'pageAdds']++;
+        if ($alreadyExists) {
+            $pageAge = time() - filemtime($filename);
+            @$datastore->data['stats']['pageAge'][(int) log($pageAge ?: 1)]++;
+        }
 
         // Save page
         file_put_contents($filename, $requestBody);
