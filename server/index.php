@@ -39,11 +39,12 @@ class Datastore {
         $this->filename = __DIR__ . '/data/datastore.json';
         $content = @file_get_contents($this->filename);
         $this->data = @json_decode($content, true) ?: [
-            'pageQueue'  => [],
-            'rssSources' => [],
-            'clients'    => [],
-            'rssBurst'   => [],
-            'stats'      => [],
+            'pageQueue'   => [],
+            'rssSources'  => [],
+            'clients'     => [],
+            'rssBurst'    => [],
+            'stats'       => [],
+            'clientRules' => [],
         ];
     }
 
@@ -235,7 +236,7 @@ function provideInstructions($requestBody, $requestHeaders, $datastore, $clientI
 
     // Some clients are made to sleep until the queue reaches a certain size (ie. either for peak hours or when other clients have gone offline)
     $hibernateDuration = 600;
-    if (!shouldClientSleep($clientId, count($queue), $datastore->data['rssSources'])) {
+    if (!shouldClientSleep($clientId, count($queue), $datastore)) {
         // Priority 1 -- keep the page queue full to avoid the nothing-to-do/hibernate case
         if (count($queue) < 8000 && $rssInstructions = provideInstructionsForRss($datastore, count($queue)))
             return $rssInstructions;
@@ -291,10 +292,9 @@ function getRssSourcePriorityQueueScore($rssSource) {
     return $score;
 }
 
-function shouldClientSleep($clientId, $pageQueueSize, $rssSources) {
-    $limits = [
-        'KristopherMacbook' => ['pageQueue' => 800, 'rssScore' => 60 * 15],
-    ];
+function shouldClientSleep($clientId, $pageQueueSize, $datastore) {
+    $rssSources = $datastore->data['rssSources'];
+    $limits     = $datastore->data['clientRules'];
 
     if (empty($limits[$clientId])) {
         logEvent("shouldClientSleep false not whitelisted $clientId");
@@ -415,13 +415,25 @@ function acceptRss($requestBody, $requestHeaders, $datastore) {
 }
 
 function doManagement($requestBody, $requestHeaders, $datastore, $clientId) {
-    if (($_GET['change'] ?? null) == 'addRssSource' && isset($_GET['index'])) {
+    $change = $_GET['change'] ?? null;
+
+    if ($change == 'addRssSource' && isset($_GET['index'])) {
         $datastore->addRssSource((int) $_GET['index']);
         $datastore->save();
         return 'added';
-    } elseif (($_GET['change'] ?? null) == 'removeRssSource' && isset($_GET['index'])) {
+    } elseif ($change == 'removeRssSource' && isset($_GET['index'])) {
         $datastore->removeRssSource((int) $_GET['index']);
         $datastore->save();
         return 'removed';
+    } elseif ($change == 'setClientRules' && $clientId) {
+        $pageQueue = $_GET['pageQueue'] ?? null;
+        $rssScore = $_GET['rssScore'] ?? null;
+        if ($pageQueue && $rssScore) {
+            $datastore->data['clientRules'][$clientId] = ['pageQueue' => (int) $pageQueue, 'rssScore' => (int) $rssScore];
+        } else {
+            unset($datastore->data['clientRules'][$clientId]);
+        }
+        $datastore->save();
+        return 'set';
     }
 }
