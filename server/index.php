@@ -238,7 +238,7 @@ function provideInstructions($requestBody, $requestHeaders, $datastore, $clientI
     $hibernateDuration = 600;
     if (!shouldClientSleep($clientId, count($queue), $datastore)) {
         // Priority 1 -- keep the page queue full to avoid the nothing-to-do/hibernate case
-        if (count($queue) < 8000 && $rssInstructions = provideInstructionsForRss($datastore, count($queue)))
+        if (count($queue) < 8000 && $rssInstructions = provideInstructionsForRss($datastore, count($queue), $clientId))
             return $rssInstructions;
 
         // Priority 2 -- process queue
@@ -252,12 +252,20 @@ function provideInstructions($requestBody, $requestHeaders, $datastore, $clientI
                     break;
             }
             $datastore->save();
+
+            $proxyIp   = $datastore->data['clientRules'][$clientId]['proxyIp'] ?? null;
+            $proxyPort = $datastore->data['clientRules'][$clientId]['proxyPort'] ?? null;
+
             return json_encode([
                 'action'                => 'getPages',
                 'sleepDurationMicrosec' => 500 * 1000,
                 'urls'                  => $urls,
+
                 // The pages will be reserved at this time, so the client should stop
                 'timeLimit'             => $howManyToGive * 3,
+
+                'proxyIp'               => $proxyIp,
+                'proxyPort'             => $proxyPort,
             ]);
         }
 
@@ -319,10 +327,13 @@ function shouldClientSleep($clientId, $pageQueueSize, $datastore) {
     return true;
 }
 
-function provideInstructionsForRss($datastore, $availableQueueSize) {
+function provideInstructionsForRss($datastore, $availableQueueSize, $clientId) {
     foreach ($datastore->data['rssSources'] as $rssSource => $data) {
         if (!getRssSourcePriorityQueueScore($data))
             break;
+
+        $proxyIp   = $datastore->data['clientRules'][$clientId]['proxyIp'] ?? null;
+        $proxyPort = $datastore->data['clientRules'][$clientId]['proxyPort'] ?? null;
 
         $datastore->data['rssSources'][$rssSource]['lastActivity'] = date(\DateTime::ATOM);
         $datastore->save();
@@ -331,9 +342,13 @@ function provideInstructionsForRss($datastore, $availableQueueSize) {
             'url'       => $rssSource,
             'loopUntil' => $data['newestItem'] ?: (new \DateTime('7 days ago'))->format(\DateTime::ATOM),
             'maxCount'  => 2000,
+
             // Skip the first results under high load, because they have a higher
             // chance of being edited soon anyway
             'initialOffset' => 25 * intval($availableQueueSize / 1000),
+
+            'proxyIp'   => $proxyIp,
+            'proxyPort' => $proxyPort,
         ]);
     }
     return null;
@@ -426,10 +441,17 @@ function doManagement($requestBody, $requestHeaders, $datastore, $clientId) {
         $datastore->save();
         return 'removed';
     } elseif ($change == 'setClientRules' && $clientId) {
-        $pageQueue = $_GET['pageQueue'] ?? null;
-        $rssScore = $_GET['rssScore'] ?? null;
-        if ($pageQueue && $rssScore) {
-            $datastore->data['clientRules'][$clientId] = ['pageQueue' => (int) $pageQueue, 'rssScore' => (int) $rssScore];
+        $pageQueue = $_GET['pageQueue'] ?? 0;
+        $rssScore = $_GET['rssScore'] ?? 0;
+        $proxyIp = $_GET['proxyIp'] ?? null;
+        $proxyPort = $_GET['proxyPort'] ?? null;
+        if ($pageQueue || $rssScore || ($proxyIp && $proxyPort)) {
+            $datastore->data['clientRules'][$clientId] = [
+                'pageQueue' => (int) $pageQueue,
+                'rssScore'  => (int) $rssScore,
+                'proxyIp'   => $proxyIp,
+                'proxyPort' => (int) $proxyPort,
+            ];
         } else {
             unset($datastore->data['clientRules'][$clientId]);
         }

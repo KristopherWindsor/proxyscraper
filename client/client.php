@@ -59,6 +59,10 @@ if ($instructions->action == 'getPages') {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        if (isset($instructions->proxyIp) && isset($instructions->proxyPort)) {
+            curl_setopt($ch, CURLOPT_PROXY, $instructions->proxyIp);
+            curl_setopt($ch, CURLOPT_PROXYPORT, $instructions->proxyPort);
+        }
         $content = curl_exec($ch);
         $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
@@ -99,9 +103,18 @@ if ($instructions->action == 'getPages') {
         $offset += 25;
         $isThisTheLastPage = ($offset >= $instructions->maxCount); // Want to get all results but need to stop at some point
 
-        $rssContent = file_get_contents($url);
-        verboseLog(['url' => $url, 'strlen' => strlen($rssContent)]);
-        if (!$rssContent)
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        if (isset($instructions->proxyIp) && isset($instructions->proxyPort)) {
+            curl_setopt($ch, CURLOPT_PROXY, $instructions->proxyIp);
+            curl_setopt($ch, CURLOPT_PROXYPORT, $instructions->proxyPort);
+        }
+        $rssContent = curl_exec($ch);
+        $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        verboseLog(['url' => $url, 'strlen' => strlen($rssContent), 'httpCode' => $httpcode]);
+        if (!$rssContent || $httpcode != 200)
             die('problem');
         $rssContent = preg_replace('/[[:^print:]]/', '', $rssContent);
 
