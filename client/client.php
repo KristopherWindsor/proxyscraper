@@ -3,18 +3,20 @@
 $CLIENT_VERSION = 1.0;
 
 function verboseLog($data) {
+    global $clientId;
+
     $VERBOSE_LOG = true;
 
     if ($VERBOSE_LOG) {
-        file_put_contents(__DIR__ . '/verbose.log', getmypid() . ' ' . json_encode($data) . "\n\n", FILE_APPEND);
+        file_put_contents(__DIR__ . '/verbose-' . $clientId . '.log', getmypid() . ' ' . json_encode($data) . "\n\n", FILE_APPEND);
     }
 }
 
-// hibernation check
-$hibernateFilename = __DIR__ . '/hibernate.dat';
-$hibernateUntil = @file_get_contents($hibernateFilename);
-if ($hibernateUntil && $hibernateUntil > time())
+function reportErrorAndQuit($hibernateFilename) {
+    // TODO tell server we have a problem
+    file_put_contents($hibernateFilename, time() + 3600 * 4);
     die();
+}
 
 // determine client ID
 if ($argc >= 2) {
@@ -26,6 +28,12 @@ if ($argc >= 2) {
     }
     $clientId = trim(file_get_contents($idFile));
 }
+
+// hibernation check
+$hibernateFilename = __DIR__ . '/' . $clientId . 'hibernate.dat';
+$hibernateUntil = @file_get_contents($hibernateFilename);
+if ($hibernateUntil && $hibernateUntil > time())
+    die();
 
 // determine endpoint to get/post to
 $endpointFilename = __DIR__ . '/api.dat';
@@ -66,6 +74,8 @@ if ($instructions->action == 'getPages') {
         $content = curl_exec($ch);
         $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+        if ($httpcode == 403)
+            reportErrorAndQuit($hibernateFilename);
         // Need to send results for 404's otherwise, we keep retrying them
         $ok = (($httpcode == 200 && $content) || $httpcode == 404);
         if (!$ok)
@@ -113,7 +123,15 @@ if ($instructions->action == 'getPages') {
         $rssContent = curl_exec($ch);
         $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-        verboseLog(['url' => $url, 'strlen' => strlen($rssContent), 'httpCode' => $httpcode]);
+        verboseLog([
+            'url' => $url,
+            'strlen' => strlen($rssContent),
+            'httpCode' => $httpcode,
+            'proxyPort' => $instructions->proxyPort,
+            'proxyIp' => $instructions->proxyIp,
+        ]);
+        if ($httpcode == 403)
+            reportErrorAndQuit($hibernateFilename);
         if (!$rssContent || $httpcode != 200)
             die('problem');
         $rssContent = preg_replace('/[[:^print:]]/', '', $rssContent);
