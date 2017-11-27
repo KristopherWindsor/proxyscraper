@@ -81,6 +81,23 @@ class Datastore {
         }
     }
 
+    public function sortRssSourcesByScore() {
+        uasort($this->data['rssSources'], function ($a, $b) {
+            $aScore = getRssSourcePriorityQueueScore($a);
+            $bScore = getRssSourcePriorityQueueScore($b);
+
+            if ($aScore == $bScore) return 0;
+            return ($aScore > $bScore) ? -1 : 1;
+        });
+    }
+
+    public function getMaxRssScore() {
+        $this->sortRssSourcesByScore();
+        foreach ($this->data['rssSources'] as $rssSource)
+            return getRssSourcePriorityQueueScore($rssSource);
+        return 0;
+    }
+
     public function save() {
         $tmpname = uniqid();
         file_put_contents($this->filename . $tmpname, json_encode($this->data));
@@ -186,6 +203,8 @@ function provideHibernateResponse($duration = 300) {
 }
 
 function provideStats($requestBody, $requestHeaders, $datastore) {
+    $datastore->sortRssSourcesByScore();
+
     $bursts = [];
     foreach ($datastore->data['rssBurst'] as $url => list($size, $timestamp))
         $bursts[] = [$url, $size, $timestamp];
@@ -194,6 +213,7 @@ function provideStats($requestBody, $requestHeaders, $datastore) {
     return json_encode([
         'pageQueueSize'               => count($datastore->data['pageQueue']),
         'pageQueueSizeWithoutPending' => count(getPageQueueWithoutPendingPages($datastore)),
+        'maxRssScore'                 => $datastore->getMaxRssScore(),
         'clients'                     => $datastore->data['clients'],
         'rssBursts'                   => $bursts,
         'otherStats'                  => @$datastore->data['stats'],
@@ -233,13 +253,7 @@ function provideInstructions($requestBody, $requestHeaders, $datastore, $clientI
     header('Content-Type: application/json');
 
     // Sort RSS sources -- priority queue
-    uasort($datastore->data['rssSources'], function ($a, $b) {
-        $aScore = getRssSourcePriorityQueueScore($a);
-        $bScore = getRssSourcePriorityQueueScore($b);
-
-        if ($aScore == $bScore) return 0;
-        return ($aScore > $bScore) ? -1 : 1;
-    });
+    $datastore->sortRssSourcesByScore();
 
     // Find "real" page queue (not counting pending pages)
     $queue = getPageQueueWithoutPendingPages($datastore);
@@ -311,7 +325,6 @@ function getRssSourcePriorityQueueScore($rssSource) {
 }
 
 function shouldClientSleep($clientId, $pageQueueSize, $datastore) {
-    $rssSources = $datastore->data['rssSources'];
     $limits     = $datastore->data['clientRules'];
 
     if (empty($limits[$clientId])) {
@@ -324,11 +337,7 @@ function shouldClientSleep($clientId, $pageQueueSize, $datastore) {
         return false;
     }
 
-    $highscore = 0;
-    foreach ($rssSources as $rssSource) {
-        $highscore = getRssSourcePriorityQueueScore($rssSource);
-        break;
-    }
+    $highscore = $datastore->getMaxRssScore();
     if ($limits[$clientId]['rssScore'] < $highscore) {
         logEvent("shouldClientSleep true large RSS score $highscore vs. " . $limits[$clientId]['rssScore']);
         return false;
