@@ -1,4 +1,3 @@
 client_id
-api.dat
+*.dat
 *.log
-hibernate.dat

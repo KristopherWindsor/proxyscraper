@@ -2,19 +2,28 @@
 
 $CLIENT_VERSION = 1.0;
 
-function verboseLog($data) {
+function verboseLog($event, $data) {
     global $clientId;
 
     $VERBOSE_LOG = true;
 
     if ($VERBOSE_LOG) {
-        file_put_contents(__DIR__ . '/verbose-' . $clientId . '.log', getmypid() . ' ' . json_encode($data) . "\n\n", FILE_APPEND);
+        file_put_contents(
+            __DIR__ . '/verbose-' . $clientId . '.log',
+            date(DateTime::ATOM) . ' ' . $event . ' pid=' . getmypid() . "\n" . json_encode($data) . "\n\n",
+            FILE_APPEND
+        );
     }
 }
 
-function reportErrorAndQuit($hibernateFilename) {
-    // TODO tell server we have a problem
-    file_put_contents($hibernateFilename, time() + 3600 * 4);
+function reportErrorAndQuit($url, $hibernateFilename) {
+    global $endpoint;
+
+    $instructions = @json_decode(file_get_contents($endpoint . 'reportError'));
+    verboseLog('reported error', ['403' => 'encountered', 'url' => $url, 'instructions' => $instructions]);
+
+    file_put_contents($hibernateFilename, time() + ($instructions->hibernateSeconds ?? 600));
+
     die();
 }
 
@@ -38,23 +47,23 @@ if ($hibernateUntil && $hibernateUntil > time())
 // determine endpoint to get/post to
 $endpointFilename = __DIR__ . '/api.dat';
 if ($argc >= 3) {
-    $endpoint = $argv[2];
+    $endpointBase = $argv[2];
 } elseif (!file_exists($endpointFilename) || filemtime($endpointFilename) < time() - 3600 * 4) {
-    $endpoint = trim(file_get_contents('http://windsorportal.com/acerbox.txt'));
-    if (!$endpoint)
+    $endpointBase = trim(file_get_contents('http://windsorportal.com/acerbox.txt'));
+    if (!$endpointBase)
         die();
-    file_put_contents($endpointFilename, $endpoint);
+    file_put_contents($endpointFilename, $endpointBase);
 } else {
-    $endpoint = file_get_contents($endpointFilename);
+    $endpointBase = file_get_contents($endpointFilename);
 }
-$endpoint .= '?cId=' . $clientId . '&cV=' . $CLIENT_VERSION . '&do=';
+$endpoint = $endpointBase . '?cId=' . $clientId . '&cV=' . $CLIENT_VERSION . '&do=';
 
 // prevent all clients from starting right on the minute
 sleep(rand(1, 30));
 
 // get instructions
 $instructions = @json_decode(file_get_contents($endpoint . 'instructions'));
-verboseLog(['endpoint' => $endpoint . 'instructions', 'instructions' => $instructions]);
+verboseLog('got instructions', ['endpoint' => $endpoint . 'instructions', 'instructions' => $instructions]);
 if (!$instructions) {
     file_put_contents($hibernateFilename, time() + 120);
     die();
@@ -75,7 +84,7 @@ if ($instructions->action == 'getPages') {
         $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
         if ($httpcode == 403)
-            reportErrorAndQuit($hibernateFilename);
+            reportErrorAndQuit($url, $hibernateFilename);
         // Need to send results for 404's otherwise, we keep retrying them
         $ok = (($httpcode == 200 && $content) || $httpcode == 404);
         if (!$ok)
@@ -95,7 +104,7 @@ if ($instructions->action == 'getPages') {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         $output = curl_exec($ch);
         curl_close($ch);
-        verboseLog(['url' => $endpoint . 'newPage', 'response' => $output]);
+        verboseLog('scraped a page and sent to server', ['url' => $endpoint . 'newPage', 'response' => $output]);
         if (!$output)
             break;
         if (time() - $startTime + 1 >= $instructions->timeLimit)
@@ -123,7 +132,7 @@ if ($instructions->action == 'getPages') {
         $rssContent = curl_exec($ch);
         $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-        verboseLog([
+        verboseLog('got RSS page', [
             'url' => $url,
             'strlen' => strlen($rssContent),
             'httpCode' => $httpcode,
@@ -131,7 +140,7 @@ if ($instructions->action == 'getPages') {
             'proxyIp' => $instructions->proxyIp,
         ]);
         if ($httpcode == 403)
-            reportErrorAndQuit($hibernateFilename);
+            reportErrorAndQuit($url, $hibernateFilename);
         if (!$rssContent || $httpcode != 200)
             die('problem');
         $rssContent = preg_replace('/[[:^print:]]/', '', $rssContent);
@@ -166,7 +175,7 @@ if ($instructions->action == 'getPages') {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         $output = curl_exec($ch);
         curl_close($ch);
-        verboseLog(['url' => $endpoint . 'rssResults', 'complete' => $isThisTheLastPage, 'pages' => count($pages), 'result' => $output]);
+        verboseLog('sent RSS results to server', ['url' => $endpoint . 'rssResults', 'complete' => $isThisTheLastPage, 'pages' => count($pages), 'result' => $output]);
 
         sleep(1);
     } while (!$isThisTheLastPage);

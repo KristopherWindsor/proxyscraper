@@ -167,6 +167,8 @@ if ($DISABLED) {
     $response = acceptRss($requestBody, $requestHeaders, $datastore);
 } elseif ($action == 'newPage' && $contentType == 'text/html') {
     $response = acceptPage($requestBody, $requestHeaders, $datastore, $clientId);
+} elseif ($action == 'reportError') {
+    $response = reportError($requestBody, $requestHeaders, $datastore, $clientId);
 } elseif ($action == 'manage') {
     $response = doManagement($requestBody, $requestHeaders, $datastore, $clientId);
 } else {
@@ -427,6 +429,11 @@ function acceptRss($requestBody, $requestHeaders, $datastore) {
     $datastore->save();
 
     return 'ok';
+}
+
+function reportError($requestBody, $requestHeaders, $datastore, $clientId) {
+    header('Content-Type: application/json');
+    return json_encode(['hibernateSeconds' => 600]);
 }
 
 function doManagement($requestBody, $requestHeaders, $datastore, $clientId) {
