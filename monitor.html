@@ -191,8 +191,11 @@
                 var text = "";
                 for (var i in data.clients) {
                     text += i + " -- ";
+                    // Forbidden error shut the client down
+                    if (data.clients[i].downUntil && data.clients[i].downUntil * 1000 > Date.now())
+                        text += "Forbidden error cooldown for " + formatTimeDuration(data.clients[i].downUntil * 1000 - Date.now());
                     // hibernating right now
-                    if (data.clients[i].hibernate * 1000 > Date.now())
+                    else if (data.clients[i].hibernate * 1000 > Date.now())
                         text += "hibernating for " + formatTimeDuration(data.clients[i].hibernate * 1000 - Date.now());
                     // recently active
                     else if (data.clients[i].lastActive * 1000 > Date.now() - 120000)

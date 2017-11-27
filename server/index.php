@@ -153,7 +153,7 @@ $clientId       = $_GET['cId'] ?? null;
 
 // Use exclusive locking so we don't have 2 processes edit the data file at the same time
 $exLock         = new ExclusiveLock();
-if ($action == 'instructions' || $action == 'rssResults' || $action == 'newPage' || $action == 'manage')
+if ($action == 'instructions' || $action == 'rssResults' || $action == 'newPage' || $action == 'manage' || $action == 'reportError')
     $exLock->lock();
 $datastore      = new Datastore();
 
@@ -164,7 +164,7 @@ if ($DISABLED) {
 } elseif ($action == 'instructions') {
     $response = provideInstructions($requestBody, $requestHeaders, $datastore, $clientId);
 } elseif ($action == 'rssResults' && $contentType == 'application/json') {
-    $response = acceptRss($requestBody, $requestHeaders, $datastore);
+    $response = acceptRss($requestBody, $requestHeaders, $datastore, $clientId);
 } elseif ($action == 'newPage' && $contentType == 'text/html') {
     $response = acceptPage($requestBody, $requestHeaders, $datastore, $clientId);
 } elseif ($action == 'reportError') {
@@ -215,7 +215,15 @@ function provideInstructions($requestBody, $requestHeaders, $datastore, $clientI
     }
 
     if (empty($datastore->data['clients'][$clientId])) {
-        $datastore->data['clients'][$clientId] = ['lastActive' => null, 'hibernate' => null, 'pagesProvided' => 0, 'initTime' => time()];
+        $datastore->data['clients'][$clientId] = [
+            'initTime'      => time(),
+            'lastActive'    => null,
+            'hibernate'     => null,
+            'downUntil'     => null,
+            'pagesProvided' => 0,
+            'errors'        => 0,
+            'lastState'     => 'functional',
+        ];
     }
     $datastore->data['clients'][$clientId]['lastActive'] = time();
     $datastore->data['clients'] = array_filter($datastore->data['clients'], function ($item) {
@@ -382,6 +390,7 @@ function acceptPage($requestBody, $requestHeaders, $datastore, $clientId) {
 
     // Track client activity
     @$datastore->data['clients'][$clientId]['pagesProvided']++;
+    $datastore->data['clients'][$clientId]['lastState'] = 'functional';
 
     // Take page out of pending queue
     unset($datastore->data['pageQueue'][$sourceUrl]);
@@ -391,7 +400,7 @@ function acceptPage($requestBody, $requestHeaders, $datastore, $clientId) {
     return 'created';
 }
 
-function acceptRss($requestBody, $requestHeaders, $datastore) {
+function acceptRss($requestBody, $requestHeaders, $datastore, $clientId) {
     $rssSource = $requestHeaders['X-SOURCE-RSS'] ?? null;
     $isComplete = $requestHeaders['X-JOB-COMPLETE'] ?? null;
     $pages = @json_decode($requestBody, true);
@@ -422,6 +431,8 @@ function acceptRss($requestBody, $requestHeaders, $datastore) {
         }
     }
 
+    $datastore->data['clients'][$clientId]['lastState'] = 'functional';
+
     $datastore->data['rssSources'][$rssSource]['lastActivity'] = date(\DateTime::ATOM);
     if ($isComplete) {
         $datastore->data['rssSources'][$rssSource]['lastComplete'] = date(\DateTime::ATOM);
@@ -433,7 +444,20 @@ function acceptRss($requestBody, $requestHeaders, $datastore) {
 
 function reportError($requestBody, $requestHeaders, $datastore, $clientId) {
     header('Content-Type: application/json');
-    return json_encode(['hibernateSeconds' => 600]);
+
+    $lastState = $datastore->data['clients'][$clientId]['lastState'] ?? 'functional';
+    if ($lastState == 'functional')
+        $errorNumber = 1;
+    else
+        $errorNumber = 1 + explode(':', $datastore->data['clients'][$clientId]['lastState'])[1];
+    $cooldown = 60 * pow(2, $errorNumber);
+
+    @$datastore->data['clients'][$clientId]['errors']++;
+    $datastore->data['clients'][$clientId]['lastState'] = 'error:' . $errorNumber;
+    $datastore->data['clients'][$clientId]['downUntil'] = $datastore->data['clients'][$clientId]['hibernate'] = time() + $cooldown;
+    $datastore->save();
+
+    return json_encode(['hibernateSeconds' => $cooldown]);
 }
 
 function doManagement($requestBody, $requestHeaders, $datastore, $clientId) {
