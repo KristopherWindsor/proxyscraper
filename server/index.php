@@ -209,14 +209,27 @@ function provideStats($requestBody, $requestHeaders, $datastore) {
     foreach ($datastore->data['rssBurst'] as $url => list($size, $timestamp))
         $bursts[] = [$url, $size, $timestamp];
 
+    $pageQueueSize = count($datastore->data['pageQueue']);
+    $maxRssScore   = $datastore->getMaxRssScore();
+
+    $tags = array_filter([
+        'QUEUE_ALMOST_FULL' => $pageQueueSize > 7000,
+        'QUEUE_FULL'        => $pageQueueSize > 8000,
+        'QUEUE_FLOOD'       => $pageQueueSize > 12000,
+        'RSS_STALE_WARN'    => $maxRssScore > 1800,
+        'RSS_STALE_ERR'     => $maxRssScore > 3600,
+        'WARNING_A'         => $pageQueueSize > 8000 || $maxRssScore > 1800,
+    ]);
+
     header('Content-Type: application/json');
     return json_encode([
-        'pageQueueSize'               => count($datastore->data['pageQueue']),
+        'pageQueueSize'               => $pageQueueSize,
         'pageQueueSizeWithoutPending' => count(getPageQueueWithoutPendingPages($datastore)),
-        'maxRssScore'                 => $datastore->getMaxRssScore(),
+        'maxRssScore'                 => $maxRssScore,
         'clients'                     => $datastore->data['clients'],
         'rssBursts'                   => $bursts,
         'otherStats'                  => @$datastore->data['stats'],
+        'tags'                        => $tags,
     ]);
 }
 
