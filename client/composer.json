@@ -1,0 +1,11 @@
+{
+    "autoload": {
+        "psr-4": {
+            "Client\\": "src/"
+        }
+    },
+    "require": {
+        "psr/container": "1.0",
+        "guzzlehttp/guzzle": "6.*"
+    }
+}
