@@ -1,7 +1,6 @@
 <?php
 use Client\Args;
 use Client\Program;
-use Client\VerboseLogger;
 
 require_once __DIR__ . '/vendor/autoload.php';
 

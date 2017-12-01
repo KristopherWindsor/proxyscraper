@@ -2,6 +2,7 @@
 namespace Client;
 
 use GuzzleHttp;
+use function GuzzleHttp\Promise\settle;
 
 class Program
 {
@@ -10,6 +11,7 @@ class Program
     protected $hibernate;
     protected $endpoint;
     protected $logger;
+    protected $curlMultiHandle;
 
     public function __construct(Args $args)
     {
@@ -97,7 +99,74 @@ class Program
 
     protected function doGetPages(array $instructions)
     {
-        // TODO
+        $startTime = time();
+
+        $guzzle = $this->getGuzzleClientForCraigslist(
+            $instructions['proxyIp'] ?? null,
+            $instructions['proxyPort'] ?? null
+        );
+
+        $promises = [];
+        foreach ($instructions['urls'] as $url) {
+            // Scrape Craigslist $url
+            $response = $guzzle->get($url);
+            $httpCode = $response->getStatusCode();
+
+            if ($httpCode == 403)
+                $this->reportForbiddenAndQuit($url);
+
+            if ($httpCode != 200 && $httpCode != 404) {
+                verboseLog('error getting page', ['url' => $url, 'httpCode' => $httpCode]);
+                $this->quitPerNetworkError();
+            }
+
+            // Send page to server async
+            $promises[] = $guzzle->postAsync(
+                $this->endpoint . 'newPage',
+                [
+                    'body'    => (string) $response->getBody(),
+                    'headers' => [
+                        'Content-Type'       => 'text/html',
+                        'X-SOURCE-URL'       => $url,
+                        'X-SOURCE-HTTP-CODE' => $httpCode,
+                        'X-CLIENT-ID'        => (string) $this->clientId,
+                        'X-CLIENT-VERSION'   => Endpoint::CLIENT_VERSION,
+                    ],
+                ]
+            );
+
+            $this->curlMultiHandle->tick();
+
+            if (time() - $startTime + 1 >= $instructions['timeLimit'])
+                break;
+            usleep($instructions['sleepDurationMicrosec']);
+        }
+
+        foreach (settle($promises)->wait() as $result) {
+            if ($result['state'] != 'fulfilled') {
+                $httpCode = $result['reason']->getCode();
+                verboseLog('error sending page to server', ['httpCode' => $httpCode]);
+                $this->quitPerNetworkError();
+            }
+        }
+
+        verboseLog('finished getting pages', ['howMany' => count($instructions['urls'])]);
+    }
+
+    protected function getGuzzleClientForCraigslist($proxyIp, $proxyPort)
+    {
+        $this->curlMultiHandle = new \GuzzleHttp\Handler\CurlMultiHandler();
+
+        $handler   = \GuzzleHttp\HandlerStack::create($this->curlMultiHandle);
+        $timeLimit = 10;
+        $proxy     = $proxyIp ? ['proxy' => 'tcp://' . $proxyIp . ':' . $proxyPort] : [];
+
+        return new GuzzleHttp\Client([
+            'connect_timeout' => $timeLimit,
+            'read_timeout'    => $timeLimit,
+            'timeout'         => $timeLimit,
+            'handler'         => $handler,
+        ] + $proxy);
     }
 
     protected function doGetRSS(array $instructions)
@@ -110,6 +179,12 @@ class Program
         $instructions = @json_decode(file_get_contents($this->endpoint . 'reportError'));
         $this->logger->log('reported error', ['403' => 'encountered', 'url' => $url, 'instructions' => $instructions]);
         $this->hibernate->hibernateUntil(time() + ($instructions->hibernateSeconds ?? 600));
+        die();
+    }
+
+    protected function quitPerNetworkError()
+    {
+        $this->hibernate->hibernateUntil(time() + 120);
         die();
     }
 }
