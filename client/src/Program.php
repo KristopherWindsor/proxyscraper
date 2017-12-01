@@ -2,6 +2,8 @@
 namespace Client;
 
 use GuzzleHttp;
+use GuzzleHttp\Exception\BadResponseException;
+use SimpleXMLElement;
 use function GuzzleHttp\Promise\settle;
 
 class Program
@@ -109,14 +111,18 @@ class Program
         $promises = [];
         foreach ($instructions['urls'] as $url) {
             // Scrape Craigslist $url
-            $response = $guzzle->get($url);
+            try {
+                $response = $guzzle->get($url);
+            } catch (BadResponseException $e) {
+                $response = $e->getResponse();
+            }
             $httpCode = $response->getStatusCode();
 
             if ($httpCode == 403)
                 $this->reportForbiddenAndQuit($url);
 
             if ($httpCode != 200 && $httpCode != 404) {
-                verboseLog('error getting page', ['url' => $url, 'httpCode' => $httpCode]);
+                $this->logger->log('error getting page', ['url' => $url, 'httpCode' => $httpCode]);
                 $this->quitPerNetworkError();
             }
 
@@ -134,7 +140,10 @@ class Program
                     ],
                 ]
             );
-
+// this is ticking the CL guzzle not the server guzzle
+// need 2 separate guzzles!!! or, move the proxy settings tbe per-request
+//!!!!!!!!!!!!!!!!!!!!!!!!!
+//TODO
             $this->curlMultiHandle->tick();
 
             if (time() - $startTime + 1 >= $instructions['timeLimit'])
@@ -145,12 +154,12 @@ class Program
         foreach (settle($promises)->wait() as $result) {
             if ($result['state'] != 'fulfilled') {
                 $httpCode = $result['reason']->getCode();
-                verboseLog('error sending page to server', ['httpCode' => $httpCode]);
+                $this->logger->log('error sending page to server', ['httpCode' => $httpCode]);
                 $this->quitPerNetworkError();
             }
         }
 
-        verboseLog('finished getting pages', ['howMany' => count($instructions['urls'])]);
+        $this->logger->log('finished getting pages', ['howMany' => count($instructions['urls'])]);
     }
 
     protected function getGuzzleClientForCraigslist($proxyIp, $proxyPort)
@@ -171,7 +180,81 @@ class Program
 
     protected function doGetRSS(array $instructions)
     {
-        // TODO
+        $loopUntil = new \DateTime($instructions['loopUntil']);
+        $offset = $instructions['initialOffset'] ?? 0;
+
+        $guzzle = $this->getGuzzleClientForCraigslist(
+            $instructions['proxyIp'] ?? null,
+            $instructions['proxyPort'] ?? null
+        );
+
+        do {
+            $url = $instructions['url'] . $offset;
+
+            $offset += 25;
+            $isThisTheLastPage = ($offset >= $instructions['maxCount']); // Want to get all results but need to stop at some point
+
+            try {
+                $response = $guzzle->get($url);
+            } catch (BadResponseException $e) {
+                $response = $e->getResponse();
+            }
+            $rssContent = (string) $response->getBody();
+            $httpCode = $response->getStatusCode();
+
+            $this->logger->log('got RSS page', [
+                'url' => $url,
+                'strlen' => strlen($rssContent),
+                'httpCode' => $httpCode,
+                'proxyPort' => $instructions['proxyPort'],
+                'proxyIp' => $instructions['proxyIp'],
+            ]);
+            if ($httpCode == 403)
+                $this->reportForbiddenAndQuit($url);
+            if (!$rssContent || $httpCode != 200)
+                $this->quitPerNetworkError();
+            $rssContent = preg_replace('/[[:^print:]]/', '', $rssContent);
+
+            $pages   = [];
+            $results = new SimpleXMLElement($rssContent);
+            foreach ($results->item as $item) {
+                $dateArray = $item->xpath('dc:date');
+                $date = (string) $dateArray[0];
+                // We got to items that have already been found
+                if (new \DateTime($date) <= $loopUntil) {
+                    $isThisTheLastPage = true;
+                    break;
+                }
+                $pages[] = [(string) $item->link, $date];
+            }
+            // Nothing else to get
+            if (!$pages)
+                $isThisTheLastPage = true;
+
+            // Send pages[] back to server
+            try {
+                $response = $guzzle->post(
+                    $this->endpoint . 'rssResults',
+                    [
+                        'headers' => [
+                            'Content-Type'     => 'application/json',
+                            'X-SOURCE-RSS'     => $instructions['url'],
+                            'X-CLIENT-ID'      => (string) $this->clientId,
+                            'X-CLIENT-VERSION' => Endpoint::CLIENT_VERSION,
+                            'X-JOB-COMPLETE'   => ($isThisTheLastPage ? 1 : 0),
+                        ],
+                        'body' => json_encode($pages)
+                    ]
+                );
+            } catch (BadResponseException $e) {
+                $response = $e->getResponse();
+            }
+            $output = (string) $response->getBody();
+
+            $this->logger->log('sent RSS results to server', ['url' => $this->endpoint . 'rssResults', 'complete' => $isThisTheLastPage, 'pages' => count($pages), 'result' => $output]);
+
+            sleep(1);
+        } while (!$isThisTheLastPage);
     }
 
     protected function reportForbiddenAndQuit($url)
