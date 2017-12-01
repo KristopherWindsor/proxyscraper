@@ -103,16 +103,14 @@ class Program
     {
         $startTime = time();
 
-        $guzzle = $this->getGuzzleClientForCraigslist(
-            $instructions['proxyIp'] ?? null,
-            $instructions['proxyPort'] ?? null
-        );
+        $guzzle = $this->getGuzzleClientForCraigslist();
+        $craigslistProxy = $this->getProxySettingsFrom($instructions);
 
         $promises = [];
         foreach ($instructions['urls'] as $url) {
             // Scrape Craigslist $url
             try {
-                $response = $guzzle->get($url);
+                $response = $guzzle->get($url, $craigslistProxy);
             } catch (BadResponseException $e) {
                 $response = $e->getResponse();
             }
@@ -140,10 +138,7 @@ class Program
                     ],
                 ]
             );
-// this is ticking the CL guzzle not the server guzzle
-// need 2 separate guzzles!!! or, move the proxy settings tbe per-request
-//!!!!!!!!!!!!!!!!!!!!!!!!!
-//TODO
+
             $this->curlMultiHandle->tick();
 
             if (time() - $startTime + 1 >= $instructions['timeLimit'])
@@ -162,20 +157,27 @@ class Program
         $this->logger->log('finished getting pages', ['howMany' => count($instructions['urls'])]);
     }
 
-    protected function getGuzzleClientForCraigslist($proxyIp, $proxyPort)
+    protected function getProxySettingsFrom(array $instructions)
+    {
+        if (!empty($instructions['proxyIp']) && !empty($instructions['proxyPort'])) {
+            return ['proxy' => 'tcp://' . $instructions['proxyIp'] . ':' . $instructions['proxyPort']];
+        }
+        return [];
+    }
+
+    protected function getGuzzleClientForCraigslist()
     {
         $this->curlMultiHandle = new \GuzzleHttp\Handler\CurlMultiHandler();
 
-        $handler   = \GuzzleHttp\HandlerStack::create($this->curlMultiHandle);
         $timeLimit = 10;
-        $proxy     = $proxyIp ? ['proxy' => 'tcp://' . $proxyIp . ':' . $proxyPort] : [];
+        $handler   = \GuzzleHttp\HandlerStack::create($this->curlMultiHandle);
 
         return new GuzzleHttp\Client([
             'connect_timeout' => $timeLimit,
             'read_timeout'    => $timeLimit,
             'timeout'         => $timeLimit,
             'handler'         => $handler,
-        ] + $proxy);
+        ]);
     }
 
     protected function doGetRSS(array $instructions)
@@ -183,10 +185,8 @@ class Program
         $loopUntil = new \DateTime($instructions['loopUntil']);
         $offset = $instructions['initialOffset'] ?? 0;
 
-        $guzzle = $this->getGuzzleClientForCraigslist(
-            $instructions['proxyIp'] ?? null,
-            $instructions['proxyPort'] ?? null
-        );
+        $guzzle = $this->getGuzzleClientForCraigslist();
+        $craigslistProxy = $this->getProxySettingsFrom($instructions);
 
         do {
             $url = $instructions['url'] . $offset;
@@ -195,7 +195,7 @@ class Program
             $isThisTheLastPage = ($offset >= $instructions['maxCount']); // Want to get all results but need to stop at some point
 
             try {
-                $response = $guzzle->get($url);
+                $response = $guzzle->get($url, $craigslistProxy);
             } catch (BadResponseException $e) {
                 $response = $e->getResponse();
             }
