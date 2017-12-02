@@ -20,17 +20,26 @@ class Program
         $this->args      = $args;
         $this->clientId  = new ClientId($this->args->getArg('clientId'));
         $this->hibernate = new Hibernate($this->clientId);
+
+        if ($this->hibernate->shouldHibernate())
+            die();
+
         $this->endpoint  = new Endpoint($this->clientId, $this->args->getArg('server'));
         $this->logger    = new VerboseLogger($this->clientId);
+        $this->lastState = new LastState($this->clientId);
 
         $this->run();
     }
 
     public function run()
     {
-        $instructions = $this->getInstructions();
+        if (!$this->lastState->didRepeat())
+            sleep(rand(1, 30)); // Don't burst all activity right on the minute
 
-        if (!empty($instructions->doRepeat)) {
+        $instructions = $this->getInstructions();
+        $doRepeat     = !empty($instructions->doRepeat);
+
+        if ($doRepeat) {
             // In this mode, the client requests more instructions as soon as it is done,
             // exiting after several minutes
             $repeatForSeconds = $instructions->repeatForSeconds ?? 1800;
@@ -46,9 +55,9 @@ class Program
                 $instructions = $this->getInstructions()
             );
         } else {
-            sleep(rand(1, 30)); // Don't burst all activity right on the minute
             $this->processInstructions($instructions);
         }
+        $this->lastState->setDidRepeat($doRepeat);
     }
 
     protected function dieIfOtherProcessRunning()
