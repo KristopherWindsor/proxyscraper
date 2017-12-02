@@ -37,7 +37,7 @@ class Program
             sleep(rand(1, 30)); // Don't burst all activity right on the minute
 
         $instructions = $this->getInstructions();
-        $doRepeat     = !empty($instructions->doRepeat);
+        $doRepeat     = !empty($instructions['clientRules']['doRepeat']);
 
         if ($doRepeat) {
             // In this mode, the client requests more instructions as soon as it is done,
@@ -112,18 +112,23 @@ class Program
     {
         $startTime = time();
 
-        $guzzle = $this->getGuzzleClientForCraigslist();
+        $guzzle          = $this->getGuzzleClientForCraigslist();
         $craigslistProxy = $this->getProxySettingsFrom($instructions);
+        $scrapeAttempts  = empty($instructions['clientRules']['continueWhenForbidden']) ? 1 : 100;
 
         $promises = [];
         foreach ($instructions['urls'] as $url) {
             // Scrape Craigslist $url
-            try {
-                $response = $guzzle->get($url, $craigslistProxy);
-            } catch (BadResponseException $e) {
-                $response = $e->getResponse();
+            for ($i = 0; $i < $scrapeAttempts; $i++) {
+                try {
+                    $response = $guzzle->get($url, $craigslistProxy);
+                } catch (BadResponseException $e) {
+                    $response = $e->getResponse();
+                }
+                $httpCode = $response->getStatusCode();
+                if ($httpCode != 403)
+                    break;
             }
-            $httpCode = $response->getStatusCode();
 
             if ($httpCode == 403)
                 $this->reportForbiddenAndQuit($url);
@@ -194,8 +199,9 @@ class Program
         $loopUntil = new \DateTime($instructions['loopUntil']);
         $offset = $instructions['initialOffset'] ?? 0;
 
-        $guzzle = $this->getGuzzleClientForCraigslist();
+        $guzzle          = $this->getGuzzleClientForCraigslist();
         $craigslistProxy = $this->getProxySettingsFrom($instructions);
+        $scrapeAttempts  = empty($instructions['clientRules']['continueWhenForbidden']) ? 1 : 100;
 
         do {
             $url = $instructions['url'] . $offset;
@@ -203,13 +209,17 @@ class Program
             $offset += 25;
             $isThisTheLastPage = ($offset >= $instructions['maxCount']); // Want to get all results but need to stop at some point
 
-            try {
-                $response = $guzzle->get($url, $craigslistProxy);
-            } catch (BadResponseException $e) {
-                $response = $e->getResponse();
+            for ($i = 0; $i < $scrapeAttempts; $i++) {
+                try {
+                    $response = $guzzle->get($url, $craigslistProxy);
+                } catch (BadResponseException $e) {
+                    $response = $e->getResponse();
+                }
+                $httpCode = $response->getStatusCode();
+                if ($httpCode != 403)
+                    break;
             }
             $rssContent = (string) $response->getBody();
-            $httpCode = $response->getStatusCode();
 
             $this->logger->log('got RSS page', [
                 'url' => $url,

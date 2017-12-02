@@ -303,6 +303,8 @@ function provideInstructions($requestBody, $requestHeaders, $datastore, $clientI
 
                 'proxyIp'               => $proxyIp,
                 'proxyPort'             => $proxyPort,
+
+                'clientRules'           => $datastore->data['clientRules'][$clientId],
             ]);
         }
 
@@ -381,6 +383,8 @@ function provideInstructionsForRss($datastore, $availableQueueSize, $clientId) {
 
             'proxyIp'   => $proxyIp,
             'proxyPort' => $proxyPort,
+
+            'clientRules' => $datastore->data['clientRules'][$clientId],
         ]);
     }
     return null;
@@ -498,12 +502,16 @@ function doManagement($requestBody, $requestHeaders, $datastore, $clientId) {
         $rssScore = $_GET['rssScore'] ?? 0;
         $proxyIp = $_GET['proxyIp'] ?? null;
         $proxyPort = $_GET['proxyPort'] ?? null;
+        $doRepeat = $_GET['doRepeat'] ?? null;
+        $continueWhenForbidden = $_GET['continueWhenForbidden'] ?? null;
         if ($pageQueue || $rssScore || ($proxyIp && $proxyPort)) {
             $datastore->data['clientRules'][$clientId] = [
                 'pageQueue' => (int) $pageQueue,
                 'rssScore'  => (int) $rssScore,
                 'proxyIp'   => $proxyIp,
                 'proxyPort' => (int) $proxyPort,
+                'doRepeat'  => (bool) $doRepeat,
+                'continueWhenForbidden' => (bool) $continueWhenForbidden,
             ];
         } else {
             unset($datastore->data['clientRules'][$clientId]);
