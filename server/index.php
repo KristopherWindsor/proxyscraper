@@ -272,43 +272,41 @@ function provideInstructions($requestBody, $requestHeaders, $datastore, $clientI
     $queue = getPageQueueWithoutPendingPages($datastore);
 
     // Some clients are made to sleep until the queue reaches a certain size (ie. either for peak hours or when other clients have gone offline)
-    $hibernateDuration = 600;
-    if (!shouldClientSleep($clientId, count($queue), $datastore)) {
+    $hibernateDuration = shouldClientSleep($clientId, count($queue), $datastore);
+    if (!$hibernateDuration) {
+        // Invariant: at least priority 1 or priority 2 applies in the case where the client should not sleep
+
         // Priority 1 -- keep the page queue full to avoid the nothing-to-do/hibernate case
         if (count($queue) < 8000 && $rssInstructions = provideInstructionsForRss($datastore, count($queue), $clientId))
             return $rssInstructions;
 
         // Priority 2 -- process queue
-        if ($queue) {
-            $howManyToGive = (int) (30 + count($queue) / 50);
-            $urls          = [];
-            foreach ($queue as $pageUrl => $_) {
-                $datastore->data['pageQueue'][$pageUrl] = date(DateTime::ATOM, time() + $howManyToGive * 3);
-                $urls[] = $pageUrl;
-                if (count($urls) >= $howManyToGive)
-                    break;
-            }
-            $datastore->save();
-
-            $proxyIp   = $datastore->data['clientRules'][$clientId]['proxyIp'] ?? null;
-            $proxyPort = $datastore->data['clientRules'][$clientId]['proxyPort'] ?? null;
-
-            return json_encode([
-                'action'                => 'getPages',
-                'sleepDurationMicrosec' => 500 * 1000,
-                'urls'                  => $urls,
-
-                // The pages will be reserved at this time, so the client should stop
-                'timeLimit'             => $howManyToGive * 3,
-
-                'proxyIp'               => $proxyIp,
-                'proxyPort'             => $proxyPort,
-
-                'clientRules'           => $datastore->data['clientRules'][$clientId],
-            ]);
+        $howManyToGive = (int) (30 + count($queue) / 50);
+        $urls          = [];
+        foreach ($queue as $pageUrl => $_) {
+            $datastore->data['pageQueue'][$pageUrl] = date(DateTime::ATOM, time() + $howManyToGive * 3);
+            $urls[] = $pageUrl;
+            if (count($urls) >= $howManyToGive)
+                break;
         }
+        $datastore->save();
 
-        $hibernateDuration = 180;
+        $proxyIp   = $datastore->data['clientRules'][$clientId]['proxyIp'] ?? null;
+        $proxyPort = $datastore->data['clientRules'][$clientId]['proxyPort'] ?? null;
+
+        return json_encode([
+            'action'                => 'getPages',
+            'sleepDurationMicrosec' => 500 * 1000,
+            'urls'                  => $urls,
+
+            // The pages will be reserved at this time, so the client should stop
+            'timeLimit'             => $howManyToGive * 3,
+
+            'proxyIp'               => $proxyIp,
+            'proxyPort'             => $proxyPort,
+
+            'clientRules'           => $datastore->data['clientRules'][$clientId],
+        ]);
     }
 
     // Nothing to do --> hibernate
@@ -340,25 +338,25 @@ function getRssSourcePriorityQueueScore($rssSource) {
 }
 
 function shouldClientSleep($clientId, $pageQueueSize, $datastore) {
-    $limits     = $datastore->data['clientRules'];
+    $limits = $datastore->data['clientRules'];
 
-    if (empty($limits[$clientId])) {
-        logEvent("shouldClientSleep false not whitelisted $clientId");
-        return false;
-    }
+    // The default client thresholds here make the client moderately active
+    $pageQueueThreshold = $limits[$clientId]['pageQueue'] ?? 500;
+    $rssScoreThreshold  = $limits[$clientId]['rssScore']  ?? 250;
 
-    if ($limits[$clientId]['pageQueue'] < $pageQueueSize) {
-        logEvent("shouldClientSleep true page queue large $pageQueueSize vs. " . $limits[$clientId]['pageQueue']);
+    if ($pageQueueThreshold < $pageQueueSize) {
+        logEvent("shouldClientSleep true page queue large $pageQueueSize vs. " . $pageQueueThreshold);
         return false;
     }
 
     $highscore = $datastore->getMaxRssScore();
-    if ($limits[$clientId]['rssScore'] < $highscore) {
-        logEvent("shouldClientSleep true large RSS score $highscore vs. " . $limits[$clientId]['rssScore']);
+    if ($rssScoreThreshold < $highscore) {
+        logEvent("shouldClientSleep true large RSS score $highscore vs. " . $rssScoreThreshold);
         return false;
     }
 
-    return true;
+    // An active client has a low rssScore threshold and should sleep for a small time accordingly
+    return 120 + intval($rssScoreThreshold / 3);
 }
 
 function provideInstructionsForRss($datastore, $availableQueueSize, $clientId) {
@@ -518,5 +516,9 @@ function doManagement($requestBody, $requestHeaders, $datastore, $clientId) {
         }
         $datastore->save();
         return 'set';
+    } elseif ($change == 'resetClientStats') {
+        $datastore->data['clients'] = [];
+        $datastore->save();
+        return 'reset';
     }
 }
