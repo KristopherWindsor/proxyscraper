@@ -201,7 +201,7 @@ class Program
     {
         $this->curlMultiHandle = new \GuzzleHttp\Handler\CurlMultiHandler();
 
-        $timeLimit = 10;
+        $timeLimit = 5;
         $handler   = \GuzzleHttp\HandlerStack::create($this->curlMultiHandle);
 
         return new GuzzleHttp\Client([
