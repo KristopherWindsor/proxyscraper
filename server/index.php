@@ -421,7 +421,8 @@ function acceptPage($requestBody, $requestHeaders, $datastore, $clientId) {
 
     // Track client activity
     @$datastore->data['clients'][$clientId]['pagesProvided']++;
-    $datastore->data['clients'][$clientId]['lastState'] = 'functional';
+    $datastore->data['clients'][$clientId]['lastActive'] = time();
+    $datastore->data['clients'][$clientId]['lastState']  = 'functional';
 
     // Take page out of pending queue
     unset($datastore->data['pageQueue'][$sourceUrl]);
@@ -462,7 +463,8 @@ function acceptRss($requestBody, $requestHeaders, $datastore, $clientId) {
         }
     }
 
-    $datastore->data['clients'][$clientId]['lastState'] = 'functional';
+    $datastore->data['clients'][$clientId]['lastActive'] = time();
+    $datastore->data['clients'][$clientId]['lastState']  = 'functional';
 
     $datastore->data['rssSources'][$rssSource]['lastActivity'] = date(\DateTime::ATOM);
     if ($isComplete) {
