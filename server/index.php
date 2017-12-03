@@ -221,12 +221,15 @@ function provideStats($requestBody, $requestHeaders, $datastore) {
         'WARNING_A'         => $pageQueueSize > 8000 || $maxRssScore > 1800,
     ]);
 
+    $clients = $datastore->data['clients'];
+    ksort($clients);
+
     header('Content-Type: application/json');
     return json_encode([
         'pageQueueSize'               => $pageQueueSize,
         'pageQueueSizeWithoutPending' => count(getPageQueueWithoutPendingPages($datastore)),
         'maxRssScore'                 => $maxRssScore,
-        'clients'                     => $datastore->data['clients'],
+        'clients'                     => $clients,
         'rssBursts'                   => $bursts,
         'otherStats'                  => @$datastore->data['stats'],
         'tags'                        => $tags,
@@ -332,6 +335,10 @@ function getRssSourcePriorityQueueScore($rssSource) {
     } elseif ($lastComplete < $fiveMinAgo) {
         $score = time() - $lastComplete->getTimeStamp();
     }
+
+    // Prevent big jump from 0 to 300 (mostly for monitoring graph)
+    if ($score > 0 && $score < 375)
+        $score = ($score - 299) * 5;
 
     logEvent('rss scored: ' . $score . ' lastActivity= ' . $rssSource['lastActivity'] . ' lastComplete=' . $rssSource['lastComplete']);
     return $score;
