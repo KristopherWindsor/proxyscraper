@@ -116,6 +116,7 @@ class Program
                 $sleepDuration = $instructions['seconds'] ?? $sleepDuration;
             default:
                 $this->hibernate->hibernateFor($sleepDuration);
+                die();
         }
     }
 
