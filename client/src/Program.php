@@ -3,6 +3,8 @@ namespace Client;
 
 use GuzzleHttp;
 use GuzzleHttp\Exception\BadResponseException;
+use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Psr7\Request;
 use SimpleXMLElement;
 use function GuzzleHttp\Promise\settle;
 
@@ -14,6 +16,7 @@ class Program
     protected $endpoint;
     protected $logger;
     protected $curlMultiHandle;
+    protected $lock;
 
     public function __construct(Args $args)
     {
@@ -33,8 +36,11 @@ class Program
 
     public function run()
     {
-        if (!$this->lastState->didRepeat())
+        // Some things we need to do before getting instructions;
+        // we have to guess if we will be repeating or not based on last time
+        if (!$this->lastState->didRepeat()) {
             sleep(rand(1, 30)); // Don't burst all activity right on the minute
+        }
 
         $instructions = $this->getInstructions();
         $doRepeat     = !empty($instructions['clientRules']['doRepeat']);
@@ -62,10 +68,15 @@ class Program
 
     protected function dieIfOtherProcessRunning()
     {
-        $running = exec("ps aux | grep 'client2.php' | grep -v grep | wc -l");
-        if ($running > 1) {
-            $this->logger->log('quitting because other instance is running');
-            die();
+        $filename = __DIR__ . '/../' . $this->clientId . '-lock.txt';
+        if (!file_exists($filename))
+            file_put_contents($filename, 'xyz');
+
+        $this->lock = fopen($filename, 'r+');
+        if (!$this->lock)
+            die('x');
+        if (!flock($this->lock, LOCK_EX | LOCK_NB)) {
+            die('x');
         }
     }
 
@@ -114,26 +125,32 @@ class Program
 
         $guzzle          = $this->getGuzzleClientForCraigslist();
         $craigslistProxy = $this->getProxySettingsFrom($instructions);
-        $scrapeAttempts  = empty($instructions['clientRules']['continueWhenForbidden']) ? 1 : 100;
+        $continueWhenForbidden = !empty($instructions['clientRules']['continueWhenForbidden']);
 
         $promises = [];
         foreach ($instructions['urls'] as $url) {
             // Scrape Craigslist $url
-            for ($i = 0; $i < $scrapeAttempts; $i++) {
-                try {
-                    $response = $guzzle->get($url, $craigslistProxy);
-                } catch (BadResponseException $e) {
-                    $response = $e->getResponse();
-                }
+            $request = new Request('GET', $url);
+            try {
+                $response = $guzzle->send($request, $craigslistProxy);
                 $httpCode = $response->getStatusCode();
-                if ($httpCode != 403)
-                    break;
+            } catch (BadResponseException $e) {
+                $response = $e->getResponse();
+                $httpCode = $response->getStatusCode();
+            } catch (RequestException $e) {
+                $response = null;
+                $httpCode = 0;
             }
-
-            if ($httpCode == 403)
-                $this->reportForbiddenAndQuit($url);
-
             if ($httpCode != 200 && $httpCode != 404) {
+                if ($continueWhenForbidden) {
+                    // Forbidden -- retrying a 403 usually gives another 403, so we move on
+                    // Timeouts -- if we retry one page we risk a timeout before getting to the other pages; do not retry
+                    $this->logger->log('error, skipping page', ['url' => $url, 'httpCode' => $httpCode, 'response' => $response ? $response->getBody() . '' : null]);
+                    continue;
+                }
+                if ($httpCode == 403) {
+                    $this->reportForbiddenAndQuit($url);
+                }
                 $this->logger->log('error getting page', ['url' => $url, 'httpCode' => $httpCode]);
                 $this->quitPerNetworkError();
             }
@@ -157,13 +174,14 @@ class Program
 
             if (time() - $startTime + 1 >= $instructions['timeLimit'])
                 break;
-            usleep($instructions['sleepDurationMicrosec']);
+            if (empty($instructions['clientRules']['doRepeat']))
+                usleep($instructions['sleepDurationMicrosec']);
         }
 
         foreach (settle($promises)->wait() as $result) {
             if ($result['state'] != 'fulfilled') {
                 $httpCode = $result['reason']->getCode();
-                $this->logger->log('error sending page to server', ['httpCode' => $httpCode]);
+                $this->logger->log('error sending page to server', ['httpCode' => $httpCode, 'info' => print_r($result, true)]);
                 $this->quitPerNetworkError();
             }
         }
@@ -174,7 +192,7 @@ class Program
     protected function getProxySettingsFrom(array $instructions)
     {
         if (!empty($instructions['proxyIp']) && !empty($instructions['proxyPort'])) {
-            return ['proxy' => 'tcp://' . $instructions['proxyIp'] . ':' . $instructions['proxyPort']];
+            return ['proxy' => $instructions['proxyIp'] . ':' . $instructions['proxyPort']];
         }
         return [];
     }
@@ -191,6 +209,7 @@ class Program
             'read_timeout'    => $timeLimit,
             'timeout'         => $timeLimit,
             'handler'         => $handler,
+            'headers'         => [],
         ]);
     }
 
@@ -201,7 +220,7 @@ class Program
 
         $guzzle          = $this->getGuzzleClientForCraigslist();
         $craigslistProxy = $this->getProxySettingsFrom($instructions);
-        $scrapeAttempts  = empty($instructions['clientRules']['continueWhenForbidden']) ? 1 : 100;
+        $scrapeAttempts  = empty($instructions['clientRules']['continueWhenForbidden']) ? 1 : 200;
 
         do {
             $url = $instructions['url'] . $offset;
@@ -212,14 +231,22 @@ class Program
             for ($i = 0; $i < $scrapeAttempts; $i++) {
                 try {
                     $response = $guzzle->get($url, $craigslistProxy);
+                    $httpCode = $response->getStatusCode();
+                    break;
                 } catch (BadResponseException $e) {
                     $response = $e->getResponse();
+                    $httpCode = $response->getStatusCode();
+                } catch (RequestException $e) {
+                    $response = null;
+                    $httpCode = 0;
                 }
-                $httpCode = $response->getStatusCode();
-                if ($httpCode != 403)
-                    break;
+
+                if ($scrapeAttempts > 1) {
+                    $this->logger->log('retriable error getting rss', ['attempt' => $i, 'attemptLimit' => $scrapeAttempts, 'httpCode' => $httpCode, 'url' => $url]);
+                    usleep(100000);
+                }
             }
-            $rssContent = (string) $response->getBody();
+            $rssContent = $response ? (string) $response->getBody() : '';
 
             $this->logger->log('got RSS page', [
                 'url' => $url,
@@ -228,6 +255,10 @@ class Program
                 'proxyPort' => $instructions['proxyPort'],
                 'proxyIp' => $instructions['proxyIp'],
             ]);
+            if ($scrapeAttempts > 1 && $httpCode != 200) {
+                $this->logger->log('rss failure -- giving up', ['url' => $url]);
+                return;
+            }
             if ($httpCode == 403)
                 $this->reportForbiddenAndQuit($url);
             if (!$rssContent || $httpCode != 200)
