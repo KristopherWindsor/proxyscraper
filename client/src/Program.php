@@ -222,6 +222,7 @@ class Program
         $guzzle          = $this->getGuzzleClientForCraigslist();
         $craigslistProxy = $this->getProxySettingsFrom($instructions);
         $scrapeAttempts  = empty($instructions['clientRules']['continueWhenForbidden']) ? 1 : 200;
+        $newestDateFound = null;
 
         do {
             $url = $instructions['url'] . $offset;
@@ -271,6 +272,11 @@ class Program
             foreach ($results->item as $item) {
                 $dateArray = $item->xpath('dc:date');
                 $date = (string) $dateArray[0];
+
+                if (!$newestDateFound || new \DateTime($date) > new \DateTime($newestDateFound)) {
+                    $newestDateFound = $date;
+                }
+
                 // We got to items that have already been found
                 if (new \DateTime($date) <= $loopUntil) {
                     $isThisTheLastPage = true;
@@ -293,7 +299,7 @@ class Program
                             'X-CLIENT-ID'      => (string) $this->clientId,
                             'X-CLIENT-VERSION' => Endpoint::CLIENT_VERSION,
                             'X-JOB-COMPLETE'   => ($isThisTheLastPage ? 1 : 0),
-                        ],
+                        ] + ($isThisTheLastPage && $newestDateFound ? ['X-NEWEST-ITEM' => $newestDateFound] : []),
                         'body' => json_encode($pages)
                     ]
                 );
