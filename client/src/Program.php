@@ -192,8 +192,8 @@ class Program
 
     protected function getProxySettingsFrom(array $instructions)
     {
-        if (!empty($instructions['proxyIp']) && !empty($instructions['proxyPort'])) {
-            return ['proxy' => $instructions['proxyIp'] . ':' . $instructions['proxyPort']];
+        if (!empty($instructions['clientRules']['proxyIp']) && !empty($instructions['clientRules']['proxyPort'])) {
+            return ['proxy' => $instructions['clientRules']['proxyIp'] . ':' . $instructions['clientRules']['proxyPort']];
         }
         return [];
     }
