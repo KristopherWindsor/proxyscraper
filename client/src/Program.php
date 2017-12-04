@@ -96,7 +96,7 @@ class Program
         if (!$instructions) {
             // Safe place to quit
             $this->hibernate->hibernateUntil(time() + 120);
-            die();
+            $this->quitPerNetworkError();
         }
         return $instructions;
     }
@@ -324,7 +324,7 @@ class Program
 
     protected function quitPerNetworkError()
     {
-        $this->hibernate->hibernateUntil(time() + 120);
+        $this->logger->log('quitting due to network error', []);
         die();
     }
 }
