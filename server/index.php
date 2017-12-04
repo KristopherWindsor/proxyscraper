@@ -348,8 +348,8 @@ function shouldClientSleep($clientId, $pageQueueSize, $datastore) {
     $limits = $datastore->data['clientRules'];
 
     // The default client thresholds here make the client moderately active
-    $pageQueueThreshold = $limits[$clientId]['pageQueue'] ?? 500;
-    $rssScoreThreshold  = $limits[$clientId]['rssScore']  ?? 250;
+    $pageQueueThreshold = $limits[$clientId]['pageQueue'] ?? 250;
+    $rssScoreThreshold  = $limits[$clientId]['rssScore']  ?? 500;
 
     if ($pageQueueThreshold < $pageQueueSize) {
         logEvent("shouldClientSleep true page queue large $pageQueueSize vs. " . $pageQueueThreshold);
@@ -456,11 +456,6 @@ function acceptRss($requestBody, $requestHeaders, $datastore, $clientId) {
         // Put new page in the queue
         if (empty($datastore->data['pageQueue'][$url]))
             $datastore->data['pageQueue'][$url] = null;
-
-        // Update RSS source
-        if (!$datastore->data['rssSources'][$rssSource]['newestItem'] || new \DateTime($dateUpdated) > new \DateTime($datastore->data['rssSources'][$rssSource]['newestItem'])) {
-            $datastore->data['rssSources'][$rssSource]['newestItem'] = (new \DateTime($dateUpdated))->format(\DateTime::ATOM);
-        }
     }
 
     $datastore->data['clients'][$clientId]['lastActive'] = time();
@@ -469,6 +464,15 @@ function acceptRss($requestBody, $requestHeaders, $datastore, $clientId) {
     $datastore->data['rssSources'][$rssSource]['lastActivity'] = date(\DateTime::ATOM);
     if ($isComplete) {
         $datastore->data['rssSources'][$rssSource]['lastComplete'] = date(\DateTime::ATOM);
+
+        // Suppose an RSS source has 5 new pages of results. The newestItem will be on page #1, but we don't want to commit it until all 5 pages have been
+        // scraped successfully.
+        $newestItem = $requestHeaders['X-NEWEST-ITEM'] ?? null;
+        if ($newestItem) {
+            if (!$datastore->data['rssSources'][$rssSource]['newestItem'] || new \DateTime($newestItem) > new \DateTime($datastore->data['rssSources'][$rssSource]['newestItem'])) {
+                $datastore->data['rssSources'][$rssSource]['newestItem'] = (new \DateTime($newestItem))->format(\DateTime::ATOM);
+            }
+        }
     }
     $datastore->save();
 
