@@ -28,6 +28,6 @@ class Hibernate
 
     protected function getFilename()
     {
-        return __DIR__ . '/../' . $this->clientId . 'hibernate.dat';
+        return __DIR__ . '/../' . $this->clientId . '-hibernate.dat';
     }
 }

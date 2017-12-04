@@ -25,6 +25,6 @@ class LastState
 
     protected function getFilename()
     {
-        return __DIR__ . '/../' . $this->clientId . 'laststate.dat';
+        return __DIR__ . '/../' . $this->clientId . '-laststate.dat';
     }
 }

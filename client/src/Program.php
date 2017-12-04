@@ -68,7 +68,7 @@ class Program
 
     protected function dieIfOtherProcessRunning()
     {
-        $filename = __DIR__ . '/../' . $this->clientId . '-lock.txt';
+        $filename = __DIR__ . '/../' . $this->clientId . '-lock.dat';
         if (!file_exists($filename))
             file_put_contents($filename, 'xyz');
 
