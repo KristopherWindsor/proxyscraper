@@ -141,6 +141,7 @@ class Program
             } catch (RequestException $e) {
                 $response = null;
                 $httpCode = 0;
+                sleep(1); // likely that proxy server is broken or trying to throttle; so slow down
             }
             if ($httpCode != 200 && $httpCode != 404) {
                 if ($continueWhenForbidden) {
@@ -241,6 +242,7 @@ class Program
                 } catch (RequestException $e) {
                     $response = null;
                     $httpCode = 0;
+                    sleep(1); // likely that proxy server is broken or trying to throttle; so slow down
                 }
 
                 if ($scrapeAttempts > 1) {
