@@ -402,6 +402,15 @@ function acceptPage($requestBody, $requestHeaders, $datastore, $clientId) {
         return '';
     }
 
+    // Return 2xx because the client has done everything correctly;
+    // but we leave the page in the queue to try again later.
+    if (strpos($requestBody, 'An error has occurred. Please try again later') > 0) {
+        @$datastore->data['stats']['replyPageRejections']++;
+        $datastore->save();
+        http_response_code(200);
+        return 'ok';
+    }
+
     $sourceHttpCode = $requestHeaders['X-SOURCE-HTTP-CODE'] ?? 200;
 
     if ($sourceHttpCode == 200) {
@@ -417,6 +426,18 @@ function acceptPage($requestBody, $requestHeaders, $datastore, $clientId) {
 
         // Save page
         file_put_contents($filename, $requestBody);
+
+        // If the page has a reference to the "reply" page, queue that for scraping
+        if ($replyPageUrl = getReplyPageUrlFromPage($sourceUrl, $requestBody)) {
+            if (empty($datastore->data['pageQueue'][$replyPageUrl])) {
+                $datastore->data['pageQueue'][$replyPageUrl] = null;
+                logEvent('replyPageQueued ' . $replyPageUrl . ' from ' . $sourceUrl);
+                @$datastore->data['stats']['replyPagesQueued']++;
+            }
+        }
+
+        if (strpos($requestBody, 'class="reply-tel"') > 0)
+            @$datastore->data['stats']['totalPhonesScraped']++;
     }
 
     // Track client activity
@@ -430,6 +451,18 @@ function acceptPage($requestBody, $requestHeaders, $datastore, $clientId) {
 
     http_response_code(201);
     return 'created';
+}
+
+function getReplyPageUrlFromPage($pageUrl, $pageContent) {
+    $pre = '<a id="replylink" href="';
+    $pos = strpos($pageContent, $pre);
+    if (!$pos)
+        return null;
+
+    $parsedUrl = parse_url($pageUrl);
+
+    $sub = substr($pageContent, $pos + strlen($pre));
+    return $parsedUrl['scheme'] . '://' . $parsedUrl['host'] . substr($sub, 0, strpos($sub, '"'));
 }
 
 function acceptRss($requestBody, $requestHeaders, $datastore, $clientId) {
