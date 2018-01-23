@@ -45,6 +45,8 @@ class Datastore {
             'rssBurst'    => [],
             'stats'       => [],
             'clientRules' => [],
+            'enableRssScraping'   => true,
+            'enableReplyScraping' => true,
         ];
     }
 
@@ -367,6 +369,9 @@ function shouldClientSleep($clientId, $pageQueueSize, $datastore) {
 }
 
 function provideInstructionsForRss($datastore, $availableQueueSize, $clientId) {
+    if (empty($datastore->data['enableRssScraping']))
+        return null;
+
     foreach ($datastore->data['rssSources'] as $rssSource => $data) {
         if (!getRssSourcePriorityQueueScore($data))
             break;
@@ -428,13 +433,14 @@ function acceptPage($requestBody, $requestHeaders, $datastore, $clientId) {
         file_put_contents($filename, $requestBody);
 
         // If the page has a reference to the "reply" page, queue that for scraping
-        if ($replyPageUrl = getReplyPageUrlFromPage($sourceUrl, $requestBody)) {
-            if (empty($datastore->data['pageQueue'][$replyPageUrl])) {
-                $datastore->data['pageQueue'][$replyPageUrl] = null;
-                logEvent('replyPageQueued ' . $replyPageUrl . ' from ' . $sourceUrl);
-                @$datastore->data['stats']['replyPagesQueued']++;
+        if (@$datastore->data['enableReplyScraping'])
+            if ($replyPageUrl = getReplyPageUrlFromPage($sourceUrl, $requestBody)) {
+                if (empty($datastore->data['pageQueue'][$replyPageUrl])) {
+                    $datastore->data['pageQueue'][$replyPageUrl] = null;
+                    logEvent('replyPageQueued ' . $replyPageUrl . ' from ' . $sourceUrl);
+                    @$datastore->data['stats']['replyPagesQueued']++;
+                }
             }
-        }
 
         if (strpos($requestBody, 'class="reply-tel"') > 0)
             @$datastore->data['stats']['totalPhonesScraped']++;
@@ -566,5 +572,9 @@ function doManagement($requestBody, $requestHeaders, $datastore, $clientId) {
         $datastore->data['clients'] = [];
         $datastore->save();
         return 'reset';
+    } elseif ($change == 'enableRssScraping' || $change == 'enableReplyScraping') {
+        $datastore->data['enableRssScraping'] = !empty($_GET['enable']);
+        $datastore->save();
+        return 'ok';
     }
 }
