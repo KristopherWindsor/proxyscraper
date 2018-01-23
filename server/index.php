@@ -299,15 +299,19 @@ function provideInstructions($requestBody, $requestHeaders, $datastore, $clientI
         $proxyIp   = $datastore->data['clientRules'][$clientId]['proxyIp'] ?? null;
         $proxyPort = $datastore->data['clientRules'][$clientId]['proxyPort'] ?? null;
 
+        $sleepDurationMicrosec = 500 * 1000;
+        if (!empty($datastore->data['clientRules'][$clientId]['heavyThrottle']))
+            $sleepDurationMicrosec = 5 * 1000 * 1000;
+
         return json_encode([
             'action'                => 'getPages',
-            'sleepDurationMicrosec' => 500 * 1000,
+            'sleepDurationMicrosec' => $sleepDurationMicrosec,
             'urls'                  => $urls,
 
             // The pages will be reserved at this time, so the client should stop
             'timeLimit'             => $howManyToGive * 3,
 
-            'proxyIp'               => $proxyIp,
+            'proxyIp'               => $proxyIp,  // drop these two
             'proxyPort'             => $proxyPort,
 
             'clientRules'           => $datastore->data['clientRules'][$clientId],
@@ -558,6 +562,8 @@ function doManagement($requestBody, $requestHeaders, $datastore, $clientId) {
 
         $doRepeat = $_GET['doRepeat'] ?? null;
         $continueWhenForbidden = $_GET['continueWhenForbidden'] ?? null;
+        $heavyThrottle = $_GET['heavyThrottle'] ?? null;
+
         if ($pageQueue || $rssScore || ($proxyIp && $proxyPort)) {
             $datastore->data['clientRules'][$clientId] = [
                 'pageQueue' => (int) $pageQueue,
@@ -568,6 +574,7 @@ function doManagement($requestBody, $requestHeaders, $datastore, $clientId) {
                 'proxyPassword' => $proxyPassword,
                 'doRepeat'  => (bool) $doRepeat,
                 'continueWhenForbidden' => (bool) $continueWhenForbidden,
+                'heavyThrottle' => (bool) $heavyThrottle,
             ];
         } else {
             unset($datastore->data['clientRules'][$clientId]);
