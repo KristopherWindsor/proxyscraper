@@ -147,7 +147,7 @@ class Program
                 if ($continueWhenForbidden) {
                     // Forbidden -- retrying a 403 usually gives another 403, so we move on
                     // Timeouts -- if we retry one page we risk a timeout before getting to the other pages; do not retry
-                    $this->logger->log('error, skipping page', ['url' => $url, 'httpCode' => $httpCode, 'response' => $response ? $response->getBody() . '' : null]);
+                    $this->logger->log('error, skipping page', ['url' => $url, 'httpCode' => $httpCode, 'response' => $response ? $response->getBody() . '' : null, 'ex' => is_object($e) ? get_class($e) : '']);
                     continue;
                 }
                 if ($httpCode == 403) {
