@@ -30,40 +30,21 @@ class Program
 
         $this->endpoint  = new Endpoint($this->clientId, $this->args->getArg('server'));
         $this->logger    = new VerboseLogger($this->clientId);
-        $this->lastState = new LastState($this->clientId);
 
         $this->run();
     }
 
     public function run()
     {
-        // Some things we need to do before getting instructions;
-        // we have to guess if we will be repeating or not based on last time
-        if (!$this->lastState->didRepeat()) {
-            sleep(rand(1, 30)); // Don't burst all activity right on the minute
-        }
-
         $instructions = $this->getInstructions();
-        $doRepeat     = !empty($instructions['clientRules']['doRepeat']);
 
-        if ($doRepeat) {
-            // In this mode, the client requests more instructions as soon as it is done,
-            // exiting after several minutes
-            $repeatForSeconds = $instructions->repeatForSeconds ?? 1800;
-            $exitTime = new \DateTime('+' . $repeatForSeconds . ' seconds');
+        $repeatForSeconds = $instructions->repeatForSeconds ?? 1800;
+        $exitTime = new \DateTime('+' . $repeatForSeconds . ' seconds');
 
-            // The client will run for several minutes, so only one process should be running
-            // We hibernate without exiting to prevent other clients from starting up
-            $this->hibernate->hibernateFor($repeatForSeconds);
-
-            for (;
-                $this->processInstructions($instructions), new \DateTime() < $exitTime;
-                $instructions = $this->getInstructions()
-            );
-        } else {
-            $this->processInstructions($instructions);
-        }
-        $this->lastState->setDidRepeat($doRepeat);
+        for (;
+            $this->processInstructions($instructions), new \DateTime() < $exitTime;
+            $instructions = $this->getInstructions()
+        );
     }
 
     protected function dieIfOtherProcessRunning()

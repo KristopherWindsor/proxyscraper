@@ -286,7 +286,7 @@ function provideInstructions($requestBody, $requestHeaders, $datastore, $clientI
             return $rssInstructions;
 
         // Priority 2 -- process queue
-        $howManyToGive = (int) (30 + count($queue) / 50);
+        $howManyToGive = (int) 30;
         $urls          = [];
         foreach ($queue as $pageUrl => $_) {
             $datastore->data['pageQueue'][$pageUrl] = date(DateTime::ATOM, time() + $howManyToGive * 3);
@@ -309,7 +309,7 @@ function provideInstructions($requestBody, $requestHeaders, $datastore, $clientI
             'urls'                  => $urls,
 
             // The pages will be reserved at this time, so the client should stop
-            'timeLimit'             => $howManyToGive * 3,
+            'timeLimit'             => $howManyToGive * 4,
 
             'proxyIp'               => $proxyIp,  // drop these two
             'proxyPort'             => $proxyPort,
@@ -560,7 +560,6 @@ function doManagement($requestBody, $requestHeaders, $datastore, $clientId) {
         $proxyUser = $_GET['proxyUser'] ?? null;
         $proxyPassword = $_GET['proxyPassword'] ?? null;
 
-        $doRepeat = $_GET['doRepeat'] ?? null;
         $continueWhenForbidden = $_GET['continueWhenForbidden'] ?? null;
         $heavyThrottle = $_GET['heavyThrottle'] ?? null;
 
@@ -572,7 +571,6 @@ function doManagement($requestBody, $requestHeaders, $datastore, $clientId) {
                 'proxyPort' => (int) $proxyPort,
                 'proxyUser' => $proxyUser,
                 'proxyPassword' => $proxyPassword,
-                'doRepeat'  => (bool) $doRepeat,
                 'continueWhenForbidden' => (bool) $continueWhenForbidden,
                 'heavyThrottle' => (bool) $heavyThrottle,
             ];
