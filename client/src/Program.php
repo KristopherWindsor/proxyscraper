@@ -26,6 +26,7 @@ class Program
 
         if ($this->hibernate->shouldHibernate())
             die();
+        $this->dieIfOtherProcessRunning();
 
         $this->endpoint  = new Endpoint($this->clientId, $this->args->getArg('server'));
         $this->logger    = new VerboseLogger($this->clientId);
@@ -53,7 +54,6 @@ class Program
 
             // The client will run for several minutes, so only one process should be running
             // We hibernate without exiting to prevent other clients from starting up
-            $this->dieIfOtherProcessRunning();
             $this->hibernate->hibernateFor($repeatForSeconds);
 
             for (;
