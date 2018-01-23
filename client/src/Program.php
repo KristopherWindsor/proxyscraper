@@ -136,7 +136,8 @@ class Program
                 }
                 $this->logger->log('error getting page', ['url' => $url, 'httpCode' => $httpCode]);
                 $this->quitPerNetworkError();
-            }
+            } else
+                $this->logger->log('success getting page', ['url' => $url, 'httpCode' => $httpCode]);
 
             // Send page to server async
             $promises[] = $guzzle->postAsync(
