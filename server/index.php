@@ -550,8 +550,12 @@ function doManagement($requestBody, $requestHeaders, $datastore, $clientId) {
     } elseif ($change == 'setClientRules' && $clientId) {
         $pageQueue = $_GET['pageQueue'] ?? 0;
         $rssScore = $_GET['rssScore'] ?? 0;
+
         $proxyIp = $_GET['proxyIp'] ?? null;
         $proxyPort = $_GET['proxyPort'] ?? null;
+        $proxyUser = $_GET['proxyUser'] ?? null;
+        $proxyPassword = $_GET['proxyPassword'] ?? null;
+
         $doRepeat = $_GET['doRepeat'] ?? null;
         $continueWhenForbidden = $_GET['continueWhenForbidden'] ?? null;
         if ($pageQueue || $rssScore || ($proxyIp && $proxyPort)) {
@@ -560,6 +564,8 @@ function doManagement($requestBody, $requestHeaders, $datastore, $clientId) {
                 'rssScore'  => (int) $rssScore,
                 'proxyIp'   => $proxyIp,
                 'proxyPort' => (int) $proxyPort,
+                'proxyUser' => $proxyUser,
+                'proxyPassword' => $proxyPassword,
                 'doRepeat'  => (bool) $doRepeat,
                 'continueWhenForbidden' => (bool) $continueWhenForbidden,
             ];

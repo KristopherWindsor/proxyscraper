@@ -194,7 +194,11 @@ class Program
     protected function getProxySettingsFrom(array $instructions)
     {
         if (!empty($instructions['clientRules']['proxyIp']) && !empty($instructions['clientRules']['proxyPort'])) {
-            return ['proxy' => $instructions['clientRules']['proxyIp'] . ':' . $instructions['clientRules']['proxyPort']];
+            $userPassword = '';
+            if (!empty($instructions['clientRules']['proxyUser']) && !empty($instructions['clientRules']['proxyPassword'])) {
+                $userPassword = $instructions['clientRules']['proxyUser'] . ':' . $instructions['clientRules']['proxyPassword'] . '@';
+            }
+            return ['proxy' => $userPassword . $instructions['clientRules']['proxyIp'] . ':' . $instructions['clientRules']['proxyPort']];
         }
         return [];
     }
