@@ -158,8 +158,21 @@ class Program
 
             if (time() - $startTime + 1 >= $instructions['timeLimit'])
                 break;
-            if (empty($instructions['clientRules']['doRepeat']))
-                usleep($instructions['sleepDurationMicrosec']);
+
+            // If we sleep for a long time between ticks, we cannot wait until the end to finish the requests
+            // because they will time out
+            if ($instructions['sleepDurationMicrosec'] > 1000 * 1000) {
+                foreach (settle($promises)->wait() as $result) {
+                    if ($result['state'] != 'fulfilled') {
+                        $httpCode = $result['reason']->getCode();
+                        $this->logger->log('error sending page to server', ['httpCode' => $httpCode, 'info' => print_r($result, true)]);
+                        $this->quitPerNetworkError();
+                    }
+                }
+                $promises = [];
+            }
+
+            usleep($instructions['sleepDurationMicrosec']);
         }
 
         foreach (settle($promises)->wait() as $result) {
